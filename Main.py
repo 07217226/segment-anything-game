@@ -14,20 +14,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from tkinter import Tk, filedialog
-
-def select_file(title="Select a file"):
-    root = Tk()
-    root.withdraw()  # Hide the main window
-    file_path = filedialog.askopenfilename(
-        title=title,
-        filetypes=[
-            ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif"),
-            ("All files", "*.*")
-        ]
-    )
-    root.destroy()
-    return file_path
+import tkinter as tk
+from tkinter import filedialog
 
 # select the device for computation
 if torch.cuda.is_available():
@@ -81,46 +69,63 @@ input_label = []
 #endregion
 
 #region 角色图片导入
-IMAGE = pygame.image.load("MyImages/ren.jpg")
-image_width, image_height = IMAGE.get_size()
-SAM2image = Image.open("MyImages/ren.jpg")
-SAM2image_width, SAM2image_height= SAM2image.size
-SAM2image = SAM2image.convert("RGB")
-#endregion
+# Initialize tkinter
+root = tk.Tk()
+root.withdraw()  # Hide the root window
 
+# Open file dialog
+file_path = filedialog.askopenfilename(
+    title="Select an Image",
+    filetypes=[("Image files", "*.jpg *.jpeg *.png")]
+)
 
-#region py图位置
-image_ratio = image_width / image_height
-if  image_width > WindowL:
-    new_width = WindowL
-    new_height = int(WindowL / image_ratio)
-elif image_height > WindowH:
-    new_height = WindowH
-    new_width = int(WindowH * image_ratio)
+# Load the selected image
+if file_path:
+    IMAGE = pygame.image.load(file_path)
+    image_width, image_height = IMAGE.get_size()
+    SAM2image = Image.open(file_path)
+    SAM2image_width, SAM2image_height = SAM2image.size
+    SAM2image = SAM2image.convert("RGB")
+
+        
+    #region py图位置
+    image_ratio = image_width / image_height
+    if  image_width > WindowL:
+        new_width = WindowL
+        new_height = int(WindowL / image_ratio)
+    elif image_height > WindowH:
+        new_height = WindowH
+        new_width = int(WindowH * image_ratio)
+    else:
+        new_width, new_height = image_width, image_height
+    IMAGE = pygame.transform.smoothscale(IMAGE, (new_width, new_height))
+    #endregion
+
+    #region 蒙板图位置
+    SAM2image_ratio = SAM2image_width / SAM2image_height
+    if  SAM2image_width > WindowL:
+        Snew_width = WindowL
+        Snew_height = int(WindowL / SAM2image_ratio)
+    elif SAM2image_height > WindowH:
+        Snew_height = WindowH
+        Snew_width = int(WindowH * SAM2image_ratio)
+    else:
+        Snew_width, Snew_height = SAM2image_width, SAM2image_height
+    SAM2image = SAM2image.resize((Snew_width, Snew_height))
+    SAM2image = SAM2image.rotate(270, expand=True)
+    SAM2image = SAM2image.transpose(Image.FLIP_LEFT_RIGHT)
+
+    #endregion
+
+    #region sam2的东西，不要动。
+    red_mask_surface = pygame.Surface((new_width, new_height), pygame.SRCALPHA)
+    predictor.set_image(SAM2image)
 else:
-    new_width, new_height = image_width, image_height
-IMAGE = pygame.transform.smoothscale(IMAGE, (new_width, new_height))
-#endregion
-
-#region 蒙板图位置
-SAM2image_ratio = SAM2image_width / SAM2image_height
-if  SAM2image_width > WindowL:
-    Snew_width = WindowL
-    Snew_height = int(WindowL / SAM2image_ratio)
-elif SAM2image_height > WindowH:
-    Snew_height = WindowH
-    Snew_width = int(WindowH * SAM2image_ratio)
-else:
-    Snew_width, Snew_height = SAM2image_width, SAM2image_height
-SAM2image = SAM2image.resize((Snew_width, Snew_height))
-SAM2image = SAM2image.rotate(270, expand=True)
-SAM2image = SAM2image.transpose(Image.FLIP_LEFT_RIGHT)
+    raise Exception("No file selected")
 
 #endregion
 
-#region sam2的东西，不要动。
-red_mask_surface = pygame.Surface((new_width, new_height), pygame.SRCALPHA)
-predictor.set_image(SAM2image)
+
 def predict():
     global ismove, player
     #删除
