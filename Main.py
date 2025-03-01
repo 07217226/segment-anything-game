@@ -14,6 +14,20 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
+from tkinter import Tk, filedialog
+
+def select_file(title="Select a file"):
+    root = Tk()
+    root.withdraw()  # Hide the main window
+    file_path = filedialog.askopenfilename(
+        title=title,
+        filetypes=[
+            ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif"),
+            ("All files", "*.*")
+        ]
+    )
+    root.destroy()
+    return file_path
 
 # select the device for computation
 if torch.cuda.is_available():
@@ -54,6 +68,10 @@ screen = pygame.display.set_mode((WindowL,WindowH))
 pygame.display.set_caption('AAAAAA')
 #endregion
 
+background = pygame.image.load('MyImages/Sam.jpg')
+dirt_img = pygame.image.load('MyImages/IMG_9516.jpeg')
+
+
 #region sam2 predictor的变量们
 Pos_position = []
 Neg_position = []
@@ -62,26 +80,14 @@ input_point = []
 input_label = []
 #endregion
 
-ismove = False
-objectsurface = None
-
-x = 0
-y = 0
-
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-BLUE = (0, 0, 255)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-
-#图片导入
-IMAGE = pygame.image.load('MyImages/ren.jpg')
+#region 角色图片导入
+IMAGE = pygame.image.load("MyImages/ren.jpg")
 image_width, image_height = IMAGE.get_size()
-SAM2image = Image.open('MyImages/ren.jpg')
+SAM2image = Image.open("MyImages/ren.jpg")
 SAM2image_width, SAM2image_height= SAM2image.size
 SAM2image = SAM2image.convert("RGB")
+#endregion
 
-background = pygame.image.load('MyImages/Sam.jpg')
 
 #region py图位置
 image_ratio = image_width / image_height
@@ -112,14 +118,11 @@ SAM2image = SAM2image.transpose(Image.FLIP_LEFT_RIGHT)
 
 #endregion
 
-#字体
-font = pygame.font.Font(None, 50)
-
+#region sam2的东西，不要动。
 red_mask_surface = pygame.Surface((new_width, new_height), pygame.SRCALPHA)
 predictor.set_image(SAM2image)
-
 def predict():
-    global ismove, objectsurface
+    global ismove, player
     #删除
     if event.type == pygame.KEYDOWN and event.key == 8:
         Pos_position.clear()
@@ -179,9 +182,18 @@ def predict():
         result[masks[0] > 0, :3] = Npimage[masks[0] > 0]
         result[..., 3] = np.where(masks[0] > 0, 255, 0)
         cutout,h,w = cutoutobject(result)
-        objectsurface = pygame.image.frombuffer(cutout.tobytes(), (w, h), 'RGBA').convert_alpha()
-        objectsurface = pygame.transform.smoothscale(objectsurface, (w/h*200,200))
+        player = pygame.image.frombuffer(cutout.tobytes(), (w, h), 'RGBA').convert_alpha()
+        player = pygame.transform.smoothscale(player, (w/h*200,200))
+#endregion
 
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+BLUE = (0, 0, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+
+#字体
+font = pygame.font.Font(None, 50)
 
 def cutoutobject(result):
     first_h_bound = 0
@@ -209,16 +221,10 @@ def cutoutobject(result):
     cutout = np.transpose(cutout,(1,0,2))
     return cutout, cutout.shape[0], cutout.shape[1]
 
-def move(objectsurface,palyerbox,keys_pressed):
-    if keys_pressed[pygame.K_a] and playerbox.x > 0:
-        palyerbox.x -= 3
-    if keys_pressed[pygame.K_d] and palyerbox.x < 800 - objectsurface.get_width():
-        palyerbox.x += 3
-    if keys_pressed[pygame.K_w] and palyerbox.y > 0:
-        palyerbox.y -= 3
-    if keys_pressed[pygame.K_s] and palyerbox.y < 800 - objectsurface.get_height():
-        palyerbox.y += 3
 
+
+#region 按钮
+all_buttons = []
 class Button:
 
     def __init__(self, text, x, y, width, height, color, hover_color):
@@ -254,48 +260,128 @@ def check_all_buttons(event):
 def draw_all_buttons(surface, font):
     for button in all_buttons:
         button.draw(surface)
+#endregion
 
+player_HIT = pygame.USEREVENT + 1
 def player_statu(playerbox, bullet):
     if playerbox.colliderect(bullet):
         pygame.event.post((pygame.event.Event(player_HIT)))
 
+ismove = False
+player = None
 
-all_buttons = []
-running = True
+x = 0
+y = 0
+
 button_start = Button("start", 300, 200, 200, 80, GREEN, BLUE)
 button_end = Button("end",20,20,20,20, RED, BLUE)
 
+#碰撞箱
 playerbox = pygame.Rect(0, 0, new_width - 10, new_height-10 )
 bullet = pygame.Rect(100, 100, 50, 50)
 
+#region 玩家信息
 player_health = 10
 last_hurt_time = 0
 hurt_cooldown = 3000
-player_HIT = pygame.USEREVENT + 1
+#end region
+
+#region 地图
+tile_size = 160
+def draw_grid():
+    for line in range(0,6):
+        pygame.draw.line(screen,(255,255,255),(0,line * tile_size),(WindowL, line * tile_size))
+        pygame.draw.line(screen, (255, 255, 255), (line * tile_size,0), (line * tile_size,WindowH))
+
+class World():
+    def __init__(self, data):
+        self.tile_list= []
+        row_count = 0
+        for row in data:
+            col_count =0
+            for tile in row:
+                if tile == 1:
+                    img =  pygame.transform.scale(dirt_img, (tile_size, tile_size))
+                    img_rect = img.get_rect()
+                    img_rect.x = col_count*tile_size
+                    img_rect.y = row_count * tile_size
+                    tile = (img,img_rect)
+                    self.tile_list.append(tile)
+                col_count+=1
+            row_count+=1
+    def draw(self):
+        for tile in self.tile_list:
+            screen.blit(tile[0],tile[1])
+
+world_data =[
+[0,0,0,0,0],
+[0,0,0,0,0],
+[0,0,0,0,0],
+[0,0,0,0,0],
+[1,1,1,1,1],
+]
+world = World(world_data)
+#endregion
+
+#大写Player是类，小写player是图片
+
+
+class Player():
+    def __init__(self,x,y):
+
+        self.image = player
+        self.rect =self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.vel_y = 0
+
+    def update(self):
+        dx = 0
+        dy = 0
+        keys_pressed = pygame.key.get_pressed()
+        if keys_pressed[pygame.K_a]:
+            dx -= 3
+        if keys_pressed[pygame.K_d]:
+            dx += 3
+        if keys_pressed[pygame.K_SPACE]:
+            self.vel_y=-15
+
+        self.vel_y += 5
+        if self.vel_y > 10:
+            self.vel_y = 10
+        dy += self.vel_y
+
+        self.rect.x += dx
+        self.rect.y += dy
+
+        screen.blit(self.image, self.rect)
+
+
+
 
 clock = pygame.time.Clock()
 
+running = True
 while running:
-
-
-    screen.fill((255, 255, 255))
     fps = clock.get_fps()
 
+    screen.fill((255, 0, 255))
     for event in pygame.event.get():
         if event.type == pygame.QUIT or button_end.is_pressed:
             running = False
         check_all_buttons(event)
 
-
     if not ismove and button_start.is_pressed:
         if button_start in all_buttons:
             all_buttons.remove(button_start)
         screen.blit(IMAGE, (0, 0))
-
         predict()
+        if player != None:
+            Player1 = Player(0, 0)
 
 
     if ismove:
+
         screen.blit(background, (0, 0))
 
         current_time = pygame.time.get_ticks()
@@ -308,8 +394,7 @@ while running:
         #子弹
         pygame.draw.rect(screen, RED, bullet)
 
-        move(objectsurface,playerbox,keys_pressed)
-        screen.blit(objectsurface,(playerbox.x, playerbox.y))
+        Player1.update()
 
         if event.type == player_HIT and current_time - last_hurt_time >= hurt_cooldown:
             last_hurt_time = current_time
@@ -321,19 +406,13 @@ while running:
             screen.fill((255, 255, 255))
             screen.blit(Dead_scence, (400, 400))
 
-    if fps<30:
-        screen.fill((255, 255, 255))
-        loading_text = font.render("Loading...", True, (0,0,0))
-        screen.blit(loading_text, (350, 400))
 
+    draw_grid()
+    world.draw()
     draw_all_buttons(screen, font)
 
-    keys_pressed = pygame.key.get_pressed()
 
-
-    clock.tick(60)
-
-    pygame.display.flip()
+    pygame.display.update()
 
 pygame.quit()
 sys.exit()
